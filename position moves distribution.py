@@ -7,14 +7,14 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.4.1
 #   kernelspec:
-#     display_name: lichess venv
+#     display_name: chess-analytics venv
 #     language: python
 #     name: venv
 # ---
 
 # # Installs & Imports
 
-# !python --version # requires 3.7+
+# !python --version # requires 3.8+
 
 # + colab={"base_uri": "https://localhost:8080/"} id="faSONRmSFmMs" outputId="e0b18a53-4390-4b05-9bdb-1c54fa1ce448"
 # !pip install -q wget chess seaborn numpy pandas
@@ -27,7 +27,7 @@ import seaborn as sns
 sns.set_theme(style="whitegrid")
 import numpy as np
 import pandas as pd
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, namedtuple
 from pprint import pprint
 import matplotlib.pyplot as plt
 
@@ -110,12 +110,49 @@ def games_generator_from_file(filename,
         
         game = pgn.read_game(pgn_file)
 
+def filter_games(games,
+                 white=None,
+                 black=None,
+                 min_elo=0,
+                 max_elo=4000,
+                 require_elo=False,
+                 time_control=None):
+    filtered = []
+    for game in games:
+        valid = True
+        if white and game['White'] != white:
+            valid = False
+        elif black and game['Black'] != black:
+            valid = False
+        elif require_elo and not (min_elo < int(game['WhiteElo']) < max_elo):
+            valid = False
+        elif require_elo and not (min_elo < int(game['BlackElo']) < max_elo):
+            valid = False
+        elif time_control and game['TimeControl'] != time_control:
+            valid = False
+        if valid:
+            filtered.append(game)
+    return filtered
+
+def filter_trie(trie, **kwargs):
+    new_trie = {}
+    
+    for move, sub_trie in trie.items():
+        if move == None:
+            new_trie[None] = filter_games(sub_trie, **kwargs)
+        else:
+            new_trie[move] = filter_trie(sub_trie, **kwargs)
+    return new_trie
+
 
 # -
 
 # ## Utilities
 
 # +
+def sanitize_url(url):
+    return Path(url).name.translate(dict.fromkeys(map(ord, '?='), '_'))
+
 def round_nearest(x, n):
     return np.round(np.array(x) / n).astype(int) * n
 
@@ -220,6 +257,12 @@ def get_elo_to_move_mapping(trie, bin_width=200):
             
     return elo_to_move
 
+def get_elo_move_count_df(move_df, bin_width=400):
+    move_df = move_df.copy()
+    move_df['avg_elo'] = round_nearest(move_df['avg_elo'], bin_width)
+    group_df = move_df.groupby(['avg_elo', 'move']).size().reset_index().rename(columns={0: 'count'})
+    return pd.crosstab(group_df.avg_elo, group_df.move, group_df['count'], aggfunc=sum).fillna(0)
+
 def normalize(d, target=1.0):
     raw = sum(d.values())
     factor = target / raw
@@ -233,6 +276,28 @@ def normalize(d, target=1.0):
 
 # +
 import matplotlib.ticker as ticker
+
+def plot_move_count_by_elo(move_df, bin_width=100, normalize_=False, figsize=(8, 5)):
+    count_df = get_elo_move_count_df(move_df)
+    
+    stat = 'count'
+    if normalize_:
+        stat = 'frequency'
+        for elo in count_df.columns:
+            sum_ = sum(count_df[elo].values)
+            count_df[elo] = count_df[elo] / sum_
+        count_df = count_df.rename(columns={'count': 'frequency'})
+        
+    count_df['move'] = count_df.index
+    melted_df = pd.melt(count_df, id_vars="move", var_name="elo", value_name=stat)
+    g = sns.catplot(x='elo',
+                    y=stat,
+                    hue='move',
+                    kind='bar',
+                    legend=True,
+                    data=melted_df)
+    return g
+    
 def plot_move_distribution_by_elo(move_df, bin_width=100, figsize=(8, 5)):
     fig, ax = plt.subplots(figsize=figsize)
     
@@ -270,27 +335,30 @@ def plot_move_distribution_by_year(move_df, bin_width=1, figsize=(8, 5)):
 # # Run
 
 # +
-#url = 'https://lichess.org/games/export/seaghost27?max=100'
-#url = 'https://lichess.org/games/export/DrNykterstein?max=7000'
-url = 'https://database.lichess.org/standard/lichess_db_standard_rated_2013-06.pgn.bz2'
+#URL = 'https://lichess.org/games/export/seaghost27?max=100'
+#URL = 'https://lichess.org/games/export/DrNykterstein?max=7000'
+#URL = 'https://database.lichess.org/standard/lichess_db_standard_rated_2015-02.pgn.bz2'
+URL = None
+FILENAME = 'chess365_d35.pgn'
 
-filename = Path(url).name.translate(dict.fromkeys(map(ord, '?='), '_'))
-
-pgn_filename = download(url, filename)
+if URL:    
+    filename = sanitize_url(URL)
+    pgn_filename = download(URL, filename)
+    
+else:
+    pgn_filename = FILENAME
+    
 print(pgn_filename)
-
-# +
-MAX_GAMES = 1000
-
-games_gen = games_generator_from_file(pgn_filename, MAX_GAMES, sample=0.01)
-trie = make_game_trie(games_gen)
 # -
+
+games_gen = games_generator_from_file(pgn_filename)
+trie = make_game_trie(games_gen)
 
 print(count_trie(trie))
 
 # +
 #LINE = ['e4', 'c5', 'Nf3', 'Nc6', 'd4', 'cxd4', 'Nxd4', ]  # open sicilian
-LINE = []  # 
+LINE = ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6']  # 
 
 line_trie = get_sub_trie(trie, LINE)
 move_df = build_move_df(line_trie)
@@ -300,93 +368,62 @@ move_df.head()
 
 # ## Move counts at different ELOs
 
-ELO_BIN_WIDTH = 200
-
 # +
-elos_to_moves = get_elo_to_move_mapping(line_trie, bin_width=ELO_BIN_WIDTH)
-elos_to_move_count = {e:Counter(ms) for e, ms in elos_to_moves.items()}
-elos_to_move_count_normalized = {e:normalize(C) for e, C in elos_to_move_count.items()}
-
-pd.DataFrame(elos_to_move_count)
+#next(get_leaves(filter_trie(line_trie, white='DrNykterstein')))
 # -
 
 # ### Top Move Distributions Across ELO and Year
 
+N = 5
+ELO_BIN_WIDTH = 400
+
 # +
-top_n = 5
-top_moves = move_df['move'].value_counts().iloc[:top_n].index.values.tolist()
+top_moves = move_df['move'].value_counts().iloc[:N].index.values.tolist()
 print(top_moves)
 
 top_moves_df = move_df[move_df['move'].isin(top_moves)]
 # -
+
+move_count_plot = plot_move_count_by_elo(top_moves_df,
+                                         bin_width=ELO_BIN_WIDTH)
 
 distr_by_elo = plot_move_distribution_by_elo(top_moves_df, 100)
 
 if top_moves_df['year'].nunique() > 1:
     distr_by_year = plot_move_distribution_by_year(top_moves_df, 0.75)
 
-
 # +
-def filter_games(games,
-                 white=None,
-                 black=None,
-                 min_elo=0,
-                 max_elo=4000,
-                 require_elo=False,
-                 time_control=None):
-    filtered = []
-    for game in games:
-        valid = True
-        if white and game['White'] != white:
-            valid = False
-        elif black and game['Black'] != black:
-            valid = False
-        elif require_elo and not (min_elo < int(game['WhiteElo']) < max_elo):
-            valid = False
-        elif require_elo and not (min_elo < int(game['BlackElo']) < max_elo):
-            valid = False
-        elif time_control and game['TimeControl'] != time_control:
-            valid = False
-        if valid:
-            filtered.append(game)
-    return filtered
+from collections import namedtuple
+Line = namedtuple('Line', ['depth', 'score', 'moves', 'freqs'])
 
-def filter_trie(trie, **kwargs):
-    new_trie = {}
-    
-    for move, sub_trie in trie.items():
-        if move == None:
-            new_trie[None] = filter_games(sub_trie, **kwargs)
-        else:
-            new_trie[move] = filter_trie(sub_trie, **kwargs)
-    return new_trie
-
-
-# -
-
-next(get_leaves(filter_trie(line_trie, white='DrNykterstein')))
-
-
-def get_top_lines(trie, k=10, max_depth=6):
+def get_top_lines(trie, max_depth=6):
     move_df = build_move_df(trie)
     counts = move_df['move'].value_counts()
     frequencies = counts / len(move_df)
     
     lines = []
     for move, sub_trie in trie.items():
-        if max_depth == 0:
-            score = frequencies[move]
-            lines.append((score, [move]))
+        
+        if max_depth == 0 and move is not None:
+            score = freq = frequencies[move]
+            lines.append(Line(1, score, [move], [freq]))
         else:
-            top_sub_lines = get_top_lines(sub_trie, k=10, max_depth=max_depth-1)
-            for score, sub_line in top_sub_lines:
-                score = (score * len(sub_line) + frequencies[move]) / (len(sub_line) + 1)
-            lines.append((score, [move] + sub_line))
-    return sorted(lines, reverse=True)[:k]
+            if isinstance(sub_trie, dict):
+                top_sub_lines = get_top_lines(sub_trie, max_depth=max_depth-1)
+                for _, score, sub_line, freqs in top_sub_lines:
+                    freq = frequencies[move]
+                    score = score * freq
+                    lines.append(Line(len(sub_line)+1, score, [move] + sub_line, [freq] + freqs))
+            elif move is None and isinstance(sub_trie, list):
+                lines.append(Line(0, 1, [], []))
+                
+    return sorted(lines, reverse=True)
     
 
 
-get_top_lines(line_trie)
+# -
+
+get_top_lines(line_trie, max_depth=3)[:10]
 
 frequencies
 
