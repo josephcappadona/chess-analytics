@@ -1,94 +1,123 @@
 import os
 from flask import Flask, render_template, request, abort, jsonify
-from transformers import T5Tokenizer, T5ForConditionalGeneration, AutoModelWithLMHead, AutoTokenizer
-import torch
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import json
+
+from py.game import games_generator_from_file
+from py.trie import make_game_trie, count_trie, filter_trie, get_sub_trie
+from py.analysis import get_top_lines
 
 app = Flask(__name__)
+
+app_cache = {}
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-
-t5_tokenizer = T5Tokenizer.from_pretrained('t5-small')
-t5_model = T5ForConditionalGeneration.from_pretrained('t5-small')
-
-@app.route('/t5')
-def t5():
-    return render_template('t5.html')
-
-@app.route('/api/t5', methods=['POST'])
-def api_t5():
-    data = request.json
-    mandatory_args = ['T5QueryType', 'T5Prompt']
-    if not data or any(arg not in data for arg in mandatory_args):
-        abort(400)
-    print(data)
-    if data['T5QueryType'] == 'summarize':
-        t5_input = f"summarize: {data['T5Prompt']} "
-    elif data['T5QueryType'] == 'translate':
-        t5_input = f"translate English to German: {data['T5Prompt']} "
-    elif data['T5QueryType'] == 'cola':
-        t5_input = f"cola sentence: {data['T5Prompt']} "
-    elif data['T5QueryType'] == 'stsb':
-        sent1, sent2 = data['T5Prompt'].split('\n')[:2]
-        t5_input = f"stsb sentence1: {sent1} sentence2: {sent2} "
-    else:
-        abort(400)
-    inputs = t5_tokenizer(t5_input, return_tensors="pt").input_ids
-    output = t5_model.generate(inputs)
-    result = t5_tokenizer.decode(output[0], skip_special_tokens=True)
-    ret = {'data': result}
-    return jsonify(ret), 201
-
-
-gpt2_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-gpt2_model = AutoModelWithLMHead.from_pretrained("gpt2")
-
-def enumerate_and_format(sequences):
-    lines = []
-    for i, sequence in enumerate(sequences):
-        line = f"{i}: {sequence}"
-        lines.append(line)
-    return '\n\n'.join(lines)
-
-@app.route('/gpt2')
-def gpt2():
-    return render_template('gpt2.html')
-
-@app.route('/api/gpt2', methods=['POST'])
-def api_gpt2():
-    data = request.json
-    mandatory_args = ['GPT2Prompt']
-    if not data or any(arg not in data for arg in mandatory_args):
-        abort(400)
-    print(data)
-    inputs = gpt2_tokenizer(data['GPT2Prompt'], return_tensors="pt").input_ids
-    output = gpt2_model.generate(
-        inputs,
-        do_sample=True,
-        max_length=100, 
-        top_k=50, 
-        top_p=0.95, 
-        num_return_sequences=3
-    )
-    result = [gpt2_tokenizer.decode(o, skip_special_tokens=True) for o in output]
-    ret = {'data': enumerate_and_format(result)}
-    return jsonify(ret), 201
-
-
-detr_model = torch.hub.load('facebookresearch/detr', 'detr_resnet50', pretrained=True)
-
-@app.route('/detr')
+@app.route('/analysis')
 def detr():
-    return render_template('detr.html')
+    return render_template('analysis.html')
 
-@app.route('/api/detr', methods=['POST'])
-def api_detr():
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
+
+@app.route('/api/analysis', methods=['POST'])
+def api_analysis():
     data = request.json
-    print(data)
-    ret = {'data': 'DETR OUTPUT HERE'}
-    return jsonify(ret), 201
+
+    if 'sessionID' not in data or 'action' not in data:
+        error_code = 401
+    else:
+        error_code = 201
+        session_id = data['sessionID']
+        action = data['action']
+
+        if session_id not in app_cache:
+            app_cache[session_id] = {}
+
+        if action == 'load':
+            pgn = app_cache[session_id]['PGN'] = data['PGN']
+            pgn_filename = data['uploadedPGNFilename']
+            if (pgn_hash := hash(pgn)) != 0:
+                if not Path(pgn_filename).exists():
+                    with open(pgn_filename, 'w+t') as pgn_file:
+                        pgn_file.write(pgn)
+                games_gen = games_generator_from_file(pgn_filename)
+                games = app_cache[session_id]['games'] = list(games_gen)
+                trie = app_cache[session_id]['trie'] = make_game_trie(games)
+                ret = {'message': f'{len(games)} games loaded'}
+            else:
+                ret = {'message': f'Provided PGN empty or invalid'}
+                error_code = 201
+        
+        elif action == 'get-cached-pgn':
+            cached_pgn_filename = data['cachedPGNFilename']
+            games_gen = games_generator_from_file(cached_pgn_filename)
+            games = app_cache[session_id]['games'] = list(games_gen)
+            trie = app_cache[session_id]['trie'] = make_game_trie(games)
+            ret = {'message': f'{len(games)} games loaded'}
+        
+        elif action == 'get-moves':
+            trie = app_cache[session_id].get('trie', {})
+            if not trie:
+                games = app_cache[session_id].get('games', [])
+                if not games:
+                    ret = {'message': 'No PGN loaded'}
+                    return ret, error_code
+                else:
+                    trie = app_cache[session_id]['trie'] = make_game_trie(games)
+            moves = data['moves']
+            line_trie = get_sub_trie(trie, moves)
+            counts = {m: count_trie(line_trie[m]) for m in line_trie}
+            next_moves_zipped = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+            next_moves, next_move_counts = list(zip(*next_moves_zipped))
+            total_count = sum(list(counts.values()))
+
+            ret = {
+                'message': f'{len(next_moves)} moves ({next_moves}) from prefix {moves} totaling {total_count} games',
+                'nextMoves': next_moves
+            }
+
+        elif action == 'top-lines':
+            trie = app_cache[session_id].get('trie', {})
+            M = 5
+            D = 5
+            moves = data.get('moves', [])
+            line_trie = get_sub_trie(trie, moves)
+            top_lines = get_top_lines(line_trie, max_depth=D)[:M]
+            top_lines_df = pd.DataFrame(line._asdict() for line in top_lines)
+            accum_prob = sum(l.score for l in top_lines)
+            data = []
+            message = f"{M} lines make up {accum_prob*100:.1f}% of the lines starting from {moves}"
+            for line in top_lines:
+                data.append([np.round(line.score, 5), list(zip(line.moves, np.round(line.freqs, 3).tolist(), line.counts))])
+            ret = {'message': message, 'topLines': data}
+            print('data', data)
+        
+        elif action == 'get-cached-pgn-ids':
+            from glob2 import glob
+            pgn_filenames = glob('*.pgn')
+            message = f"{len(pgn_filenames)} to choose from"
+            ret = {'message': message, 'PGNFilenames': pgn_filenames}
+
+        elif action == 'find-tactics':
+            ret = {}
+
+        else:
+            ret = {}
+    return json.dumps(ret, cls=NpEncoder), error_code
 
 
 if __name__ == '__main__':

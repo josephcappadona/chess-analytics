@@ -4,9 +4,7 @@ module.exports = {
     mode: 'development',
     entry: {
         index: './js/index.jsx',
-        t5: './js/t5.jsx',
-        gpt2: './js/gpt2.jsx',
-        detr: './js/detr.jsx',
+        analysis: './js/analysis.jsx',
     },
     module: {
         rules: [
@@ -39,4 +37,7 @@ module.exports = {
         path: path.resolve(__dirname, 'static'),
         filename: '[name].bundle.js',
     },
+    node: {
+        fs: "empty"
+     }
 };

@@ -9,5 +9,6 @@ cd chess-analytics
 python3.8 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+sudo apt-get install libcairo2-dev
 python -m ipykernel install --user --name venv --display-name "chess-analytics venv"
 ```
