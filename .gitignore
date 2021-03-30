@@ -1,6 +1,7 @@
 *.pgn
 *.json
 *.png
+*.log
 .ipynb_checkpoints/
 
 venv/

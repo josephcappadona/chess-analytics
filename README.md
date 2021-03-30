@@ -12,3 +12,9 @@ pip install -r requirements.txt
 sudo apt-get install libcairo2-dev
 python -m ipykernel install --user --name venv --display-name "chess-analytics venv"
 ```
+
+## Example
+
+Here is what the Analysis page looks like:
+
+![analysis](./app-example.png)

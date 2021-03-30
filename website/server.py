@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import json
+from pprint import pprint
 
 from py.game import games_generator_from_file
 from py.trie import make_game_trie, count_trie, filter_trie, get_sub_trie
@@ -85,15 +86,23 @@ def api_analysis():
             next_moves, next_move_counts = list(zip(*next_moves_zipped))
             total_count = sum(list(counts.values()))
 
+            if None in next_moves:
+                cur_games = line_trie[None]
+                next_moves = tuple(x for x in next_moves if x is not None)
+            else:
+                cur_games = []
+
             ret = {
-                'message': f'{len(next_moves)} moves ({next_moves}) from prefix {moves} totaling {total_count} games',
-                'nextMoves': next_moves
+                'message': f'{len(next_moves)} moves ({next_moves}) from prefix {moves} totaling {total_count} games' + \
+                            (f' (this includes {len(cur_games)} concluding here)' if len(cur_games) else ''),
+                'nextMoves': next_moves,
+                'curGames': cur_games,
             }
 
         elif action == 'top-lines':
             trie = app_cache[session_id].get('trie', {})
-            M = 5
-            D = 5
+            M = data.get('quantity', 5)
+            D = data.get('depth', 5)
             moves = data.get('moves', [])
             line_trie = get_sub_trie(trie, moves)
             top_lines = get_top_lines(line_trie, max_depth=D)[:M]
@@ -117,6 +126,7 @@ def api_analysis():
 
         else:
             ret = {}
+    pprint(ret)
     return json.dumps(ret, cls=NpEncoder), error_code
 
 

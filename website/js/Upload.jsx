@@ -8,8 +8,6 @@ import 'react-dropdown/style.css';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import '../css/common.css';
-import '../css/analysis.css';
 import Chessboard from 'react-simple-chessboard';
 import useChess from 'react-chess.js';
 import Collapse from '@material-ui/core/Collapse';

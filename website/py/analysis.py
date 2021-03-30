@@ -13,7 +13,7 @@ def get_top_lines(trie, max_depth=6):
     lines = []
     for move, sub_trie in trie.items():
         
-        if max_depth == 0 and move is not None:
+        if max_depth == 1 and move is not None:
             score = freq = frequencies[move]
             count = counts[move]
             lines.append(Line(1, score, [move], [freq], [count]))

@@ -8,8 +8,6 @@ import 'react-dropdown/style.css';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import '../css/common.css';
-import '../css/analysis.css';
 import Chessboard from 'react-simple-chessboard';
 import useChess from 'react-chess.js';
 import Collapse from '@material-ui/core/Collapse';
@@ -34,9 +32,29 @@ export const TopLines = function(props) {
 
     const useStyles = makeStyles({
         topLinesRoot: {
-            width: 1000,
-            height: 500,
+            minWidth: 600,
+            minHeight: 500,
         },
+        topLinesForm: {
+
+        },
+        topLinesDisplay: {
+            display: 'table',
+        },
+
+        formLabel: {
+            margin: 'auto 0',
+        },
+        depthInput: {
+            width: 100,
+        },
+        quantityInput: {
+            width: 100,
+        },
+        inputGroup: {
+            display: 'flex',
+        },
+
         lineScore: {
             width: 100,
             height: 100,
@@ -52,9 +70,10 @@ export const TopLines = function(props) {
             margin: 'auto',
         },
         topLine: {
-            height: 100,
+            minHeight: 100,
+            minWidth: 600,
             margin: 15,
-        }
+        },
     });
     const classes = useStyles();
 
@@ -70,10 +89,11 @@ export const TopLines = function(props) {
         event.preventDefault();
         const data = event.target.elements;
         console.log(data);
-        const depth = data.TopLinesDepth.value;
+        const depth = parseInt(data.TopLinesDepth.value);
+        const quantity = parseInt(data.TopLinesQuantity.value);
 
         const action = 'top-lines';
-        const json = JSON.stringify({ sessionID, action, moves, depth });
+        const json = JSON.stringify({ sessionID, action, moves, depth, quantity });
         console.log(sessionID, action, moves, depth);
         const params = {
             headers: {'Content-Type': 'application/json'}
@@ -111,10 +131,10 @@ export const TopLines = function(props) {
         return (
             <Row className={classes.topLine}>
                 <LineScore score={score} />
-                {line.map((x) => {
-                    //console.log(x);
-                    //return <TopLineMove move={x[0]} prob={x[1]} count={x[2]} />
-                    return <div>{x}</div>
+                {line.map((x, i) => {
+                    console.log('move', i, x[0], x[1], x[2]);
+                    return <TopLineMove move={x[0]} prob={x[1]} count={x[2]} />
+                    //return <div>{x}</div>
                 })}
             </Row>
         )
@@ -134,15 +154,19 @@ export const TopLines = function(props) {
             </Row>
 
             <Form className="top-lines-form" noValidate onSubmit={getTopLines}>
-                <Form.Group controlId="TopLinesDepth">
-                    <Form.Label>Depth</Form.Label>
-                    <Form.Control as="textarea" rows={1} />
+                <Form.Group className={classes.inputGroup} controlId="TopLinesDepth">
+                    <Form.Label className={classes.formLabel}>Depth</Form.Label>
+                    <Form.Control className={classes.depthInput} as="input" type="number" defaultValue={5} />
+                </Form.Group>
+                <Form.Group className={classes.inputGroup} controlId="TopLinesQuantity">
+                    <Form.Label className={classes.formLabel}>Quantity</Form.Label>
+                    <Form.Control className={classes.quantityInput} as="input" type="number" defaultValue={5} />
                 </Form.Group>
                 <Button type="submit" variant="primary">Get Top Lines</Button>
             </Form>
             
             {topLines.length > 0 ?
-                <List >
+                <List className={classes.topLinesDisplay} >
                     <ListItem button onClick={onCollapseClick}>
                         <ListItemText >
                             {topLinesResponse}

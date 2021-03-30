@@ -1,14 +1,14 @@
 {
   "scripts": {
-    "dev": "webpack --mode development --history-api-fallback",
-    "start": "webpack --mode development --watch --history-api-fallback"
+    "dev": "webpack --config webpack.dev.js",
+    "start": "webpack --watch --config webpack.dev.js",
+    "build": "webpack --config webpack.prod.js"
   },
   "keywords": [],
   "author": "Joseph Cappadona",
-  "license": "ISC",
+  "license": "GPLv3",
   "devDependencies": {
     "@babel/core": "^7.1.2",
-    "@babel/plugin-proposal-class-properties": "^7.10.1",
     "@babel/preset-env": "^7.0.0",
     "@babel/preset-react": "^7.0.0",
     "babel-loader": "^8.0.4",
@@ -16,7 +16,8 @@
     "style-loader": "^1.2.1",
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.12",
-    "webpack-dev-server": "^3.11.0"
+    "webpack-dev-server": "^3.11.0",
+    "webpack-merge": "^5.7.3"
   },
   "dependencies": {
     "@chrisoakman/chessboardjs": "^1.0.0",
@@ -25,7 +26,6 @@
     "axios": "^0.21.1",
     "bootstrap": "^4.5.3",
     "chess.js": "^0.11.0",
-    "chessboardjsx": "^2.4.2",
     "fs": "^0.0.1-security",
     "react": "^16.13.1",
     "react-async": "^10.0.1",

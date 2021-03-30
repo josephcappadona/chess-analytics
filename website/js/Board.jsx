@@ -1,21 +1,15 @@
 import React, { useEffect } from 'react';
-import ReactDOM from 'react-dom';
-import Form from 'react-bootstrap/Form';
 import Button from 'react-bootstrap/Button';
 import Spinner from 'react-bootstrap/Spinner';
-import Dropdown from 'react-dropdown';
 import 'react-dropdown/style.css';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import '../css/common.css';
-import '../css/analysis.css';
 import Chessboard from 'react-simple-chessboard';
 import useChess from 'react-chess.js';
 import Collapse from '@material-ui/core/Collapse';
 import List from '@material-ui/core/List';
 import ListItem from '@material-ui/core/ListItem';
-import ListSubheader from '@material-ui/core/ListSubheader';
 import ListItemIcon from '@material-ui/core/ListItemIcon';
 import ListItemText from '@material-ui/core/ListItemText';
 import ExpandLess from '@material-ui/icons/ExpandLess';
@@ -35,12 +29,21 @@ export const Board = function(props) {
         boardRoot: {
             width: 1200,
             minHeight: 600,
+            display: 'flex',
+        },
+        boardControl: {
+            width: 500,
+            flex: 0,
         },
         collapseHeader: {
             height: 80,
         },
         nextMoves: {
-            width: 600,
+            paddingLeft: 20,
+        },
+        nextMovesList: {
+            paddingTop: 0,
+            paddingBottom: 0,
         },
         chessboard: {
             width: 500,
@@ -50,28 +53,54 @@ export const Board = function(props) {
     const classes = useStyles();
     const { onChange, sessionID, PGN } = props;
 
-    const [nextMovesLoading, setNextMovesLoading] = React.useState(false);
-    const [nextMovesResponse, setNextMovesResponse] = React.useState("");
-    const [nextMovesExpanded, setNextMovesExpanded] = React.useState(true);
-    const [nextMoves, setNextMoves] = React.useState([]);
-    const [firstMove, setFirstMove] = React.useState("");
-    const [history, setHistory] = React.useState([]);
+    const [state, setState] = React.useState({
+        nextMovesLoading: false,
+        nextMovesResponse: "",
+        nextMovesExpanded: true,
+        nextMoves: [],
+        firstMove: "",
+        history: [],
+        curGames: [],
+    });
+
+    const {
+        nextMovesLoading,
+        nextMovesResponse,
+        nextMovesExpanded,
+        nextMoves,
+        firstMove,
+        history,
+        curGames,
+    } = state;
 
     var getNextMoves = function(moves) {
+        
         const action = 'get-moves';
         const json = JSON.stringify({ sessionID, action, moves });
         console.log(sessionID, action, moves);
         const params = {
             headers: {'Content-Type': 'application/json'}
         };
-        setNextMovesLoading(true);
+        setState(prevState => { return { ...prevState, nextMovesLoading: true }; });
         axios.post(HOST + '/api/analysis', json, params)
             .then(response => {
-                setNextMovesLoading(false);
-                setNextMovesResponse(response.data.message);
+                console.log('response.data.message', response.data.message);
+                setState(prevState => {
+                    return {
+                        ...prevState,
+                        nextMovesLoading: false,
+                        nextMovesResponse: response.data.message
+                    };
+                });
                 if (response.data.nextMoves !== undefined) {
-                    setNextMoves(response.data.nextMoves);
-                    setFirstMove(response.data.nextMoves[0]);
+                    setState(prevState => {
+                        return {
+                            ...prevState,
+                            nextMoves: response.data.nextMoves,
+                            firstMove: response.data.nextMoves[0],
+                            curGames: response.data.curGames,
+                        };
+                    });
                 }
         });
     };
@@ -79,7 +108,7 @@ export const Board = function(props) {
     useEffect(() => {
         const newHistory = [];
         reset();
-        setHistory(newHistory);
+        setState(prevState => { return { ...prevState, history: newHistory }; });
         getNextMoves(newHistory);
     }, []);
     
@@ -88,20 +117,18 @@ export const Board = function(props) {
         const newHistory = [...history, nextMove];
 
         move(nextMove);
-        setHistory(newHistory);
+        setState(prevState => { return { ...prevState, history: newHistory }; });
 
         getNextMoves(newHistory);
-
         onChange(newHistory);
     };
 
-    var MoveButton = function(props) {
-        const move = props.move;
+    var MoveButton = function({ move }) {
         const handleClick = function(event) {
             handleMove(move);
-        }
+        };
         return (
-            <Button onClick={handleClick}>{move}</Button>
+            <Button disabled={nextMovesLoading} onClick={handleClick}>{move}</Button>
         )
     };
 
@@ -111,7 +138,7 @@ export const Board = function(props) {
 
         undo();
         
-        setHistory(newHistory);
+        setState(prevState => { return { ...prevState, history: newHistory }; });
         getNextMoves(newHistory);
 
         onChange(newHistory);
@@ -122,46 +149,48 @@ export const Board = function(props) {
 
         reset();
 
-        setHistory(newHistory);
+        setState(prevState => { return { ...prevState, history: newHistory }; });
         getNextMoves(newHistory);
         
         onChange(newHistory);
     }
 
     const onCollapseClick = function() {
-        setNextMovesExpanded(!nextMovesExpanded);
+        setState(prevState => { return { ...prevState, nextMovesExpanded: !nextMovesExpanded }; });
     }
 
     return (
         <div className={classes.boardRoot}>
-            <Row>
-                {/** NEXT MOVES */}
-                <div className={classes.nextMoves}>
-                    <List >
-                        <ListItem className={classes.collapseHeader} button onClick={onCollapseClick}>
-                            <Spinner hidden={!nextMovesLoading} animation="border" role="status"><span className="sr-only">Loading...</span></Spinner>
-                            <ListItemText>{nextMovesResponse}</ListItemText>
-                            <ListItemIcon>{nextMovesExpanded ? <ExpandMore /> : <ExpandLess />}</ListItemIcon>
-                        </ListItem>
-                        
-                        <Collapse in={nextMovesExpanded} timeout="auto">
-                            <List>
-                                {nextMoves === undefined ? '' : nextMoves.map(move => <ListItem><MoveButton move={move} onClick={handleMove} /></ListItem>)}
-                            </List>
-                        </Collapse>
-                    </List>
+            {/* BOARD CONTROL  setNextMovesExpanded*/}
+            <Col className={classes.boardControl}>
+                <div className={classes.chessboard} >
+                    <Chessboard position={fen} />
                 </div>
-
-                {/* BOARD CONTROL  setNextMovesExpanded*/}
-                <Col>
-                    <div className={classes.chessboard} >
-                        <Chessboard position={fen} />
-                    </div>
+                <Row>
                     <Button disabled={nextMovesLoading || nextMoves === []} onClick={() => {handleMove(firstMove);}}>Move</Button>
                     <Button disabled={nextMovesLoading} onClick={handleUndo}>Undo</Button>
                     <Button disabled={nextMovesLoading} onClick={handleReset}>Reset</Button>
-                </Col>
-            </Row>
+                </Row>
+            </Col>
+
+            {/** NEXT MOVES */}
+            <div className={classes.nextMoves}>
+                <List className={classes.nextMovesList}>
+                    <ListItem className={classes.collapseHeader} button onClick={onCollapseClick}>
+                        <Spinner hidden={!nextMovesLoading} animation="border" role="status">
+                            <span className="sr-only">Loading...</span></Spinner>
+                        <ListItemText>{nextMovesResponse}</ListItemText>
+                        <ListItemIcon>{nextMovesExpanded ? <ExpandMore /> : <ExpandLess />}</ListItemIcon>
+                    </ListItem>
+                    
+                    <Collapse in={nextMovesExpanded} timeout="auto">
+                        <List>
+                            {nextMoves === undefined ? '' : nextMoves.map(move => <ListItem><MoveButton move={move} /></ListItem>)}
+                            {curGames === undefined ? '' : curGames.map(game => <ListItem>{JSON.stringify(game)}</ListItem>)}
+                        </List>
+                    </Collapse>
+                </List>
+            </div>
         </div>
     )
 }
